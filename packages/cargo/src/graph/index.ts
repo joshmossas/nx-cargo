@@ -157,13 +157,11 @@ function mapCargoProjects(ctx: Context, packages: Map<CargoId, CargoPackage>) {
 
 /**
  * Executes 'cargo metadata'.
- * Uses --no-deps because we only care about internal workspace dependencies.
  */
 function getCargoMetadata(cwd: string): CargoMetadata {
 	const availableMemory = os.freemem();
-	const cmd = "cargo metadata --format-version=1 --no-deps";
-	console.info(`[nx-json] Executing: "${cmd}"`);
-	const metadata = cp.execSync("cargo metadata --format-version=1 --no-deps", {
+	const cmd = "cargo metadata --format-version=1";
+	const metadata = cp.execSync(cmd, {
 		encoding: "utf8",
 		maxBuffer: availableMemory,
 		cwd: cwd,
