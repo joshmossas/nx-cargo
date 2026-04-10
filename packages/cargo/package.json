@@ -3,7 +3,16 @@
 	"private": false,
 	"version": "0.6.5",
 	"license": "MIT",
+	"type": "module",
 	"main": "dist/index.mjs",
+	"types": "dist/index.d.mts",
+	"exports": {
+		".": {
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs",
+			"types": "./dist/index.d.ts"
+		}
+	},
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/nxrs/cargo.git"
@@ -22,6 +31,7 @@
 		"@nx/devkit": ">= 17"
 	},
 	"devDependencies": {
+		"typescript": "^5.9.3",
 		"unbuild": "^3.6.1"
 	},
 	"scripts": {

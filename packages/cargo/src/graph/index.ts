@@ -59,11 +59,13 @@ export function createDependencies(_: unknown, ctx: Context): GraphDependency[] 
 			const depth = filepath.split(path.sep).length;
 			return { filepath, depth };
 		})
-		.filter(manifest => fs.existsSync(manifest.filepath))
+		.filter(manifest => {
+			console.log("CHECKING FOR Cargo.toml", manifest.filepath);
+			return fs.existsSync(manifest.filepath);
+		})
 		.sort((a, b) => a.depth - b.depth);
 
 	for (const { filepath } of sortedManifests) {
-		// 2. Skip if this manifest was already included in a previously processed workspace
 		if (seenManifestPaths.has(filepath)) {
 			continue;
 		}
@@ -71,19 +73,17 @@ export function createDependencies(_: unknown, ctx: Context): GraphDependency[] 
 		try {
 			const metadata = getCargoMetadata(path.dirname(filepath));
 
-			// 3. Mark every package in this metadata as "seen" to avoid redundant calls
-			for (const pkg of metadata.packages) {
-				seenManifestPaths.add(path.resolve(pkg.manifest_path));
+			if (metadata.packages) {
+				for (const pkg of metadata.packages) {
+					seenManifestPaths.add(path.resolve(pkg.manifest_path));
+				}
 			}
 
-			// 4. Extract dependencies from this specific workspace/crate
 			const workspaceDeps = processWorkspaceMetadata(ctx, metadata);
 			allDependencies.push(...workspaceDeps);
 		} catch (e) {
-			console.warn(
-				`[nx-rust] Skipping ${filepath} due to error:`,
-				e instanceof Error ? e.message : e
-			);
+			// Log to stderr so it shows up in the terminal even if Nx masks the error
+			process.stderr.write(`[nx-rust] Error processing ${filepath}\n`);
 		}
 	}
 
