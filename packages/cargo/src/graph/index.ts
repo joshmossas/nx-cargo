@@ -60,11 +60,10 @@ export function createDependencies(_: unknown, ctx: Context): GraphDependency[] 
 			return { filepath, depth };
 		})
 		.filter(manifest => {
-			console.log("CHECKING FOR Cargo.toml", manifest.filepath);
 			return fs.existsSync(manifest.filepath);
 		})
 		.sort((a, b) => a.depth - b.depth);
-
+	fs.writeFileSync("__cargo-manifests.json", JSON.stringify(sortedManifests));
 	for (const { filepath } of sortedManifests) {
 		if (seenManifestPaths.has(filepath)) {
 			continue;
@@ -150,6 +149,8 @@ function mapCargoProjects(ctx: Context, packages: Map<CargoId, CargoPackage>) {
 			});
 		}
 	}
+
+	fs.writeFileSync("__cargo-projects.json", JSON.stringify(result));
 
 	return result;
 }
