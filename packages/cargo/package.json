@@ -1,10 +1,9 @@
 {
-	"name": "@nxrs/cargo",
+	"name": "@joshmossas/nx-cargo",
+	"private": false,
 	"version": "0.6.2",
 	"license": "MIT",
-	"main": "src/index.js",
-	"generators": "./generators.json",
-	"executors": "./executors.json",
+	"main": "dist/index.mjs",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/nxrs/cargo.git"
@@ -21,5 +20,11 @@
 	},
 	"peerDependencies": {
 		"@nx/devkit": ">= 17"
-	}
+	},
+	"devDependencies": {
+		"unbuild": "^3.6.1"
+	},
+  "scripts": {
+    "build": "unbuild"
+  }
 }

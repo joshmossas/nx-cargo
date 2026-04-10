@@ -4,13 +4,17 @@ import {
 	RawProjectGraphDependency as GraphDependency,
 	DependencyType,
 } from "@nx/devkit";
-import * as cp from "child_process";
-import * as os from "os";
-import * as path from "path";
+import fs from "node:fs";
+import * as cp from "node:child_process";
+import * as os from "node:os";
+import * as path from "node:path";
 
 type VersionNumber = `${number}.${number}.${number}`;
 type PackageVersion = `${string}@${VersionNumber}` | VersionNumber;
-type CargoId = `${"registry"|"path"}+${"http"|"https"|"file"}://${string}#${PackageVersion}`;
+type CargoId = `${"registry" | "path"}+${
+	| "http"
+	| "https"
+	| "file"}://${string}#${PackageVersion}`;
 
 interface CargoPackage {
 	name: string;
@@ -71,62 +75,88 @@ interface ResolveNode {
 	id: CargoId;
 	dependencies: CargoId[];
 }
+export function createDependencies(_: unknown, ctx: Context): GraphDependency[] {
+	const allDependencies: GraphDependency[] = [];
+	const processedWorkspaceRoots = new Set<string>();
 
-export function createDependencies<T = unknown>(_: T, ctx: Context): GraphDependency[] {
-	let {
+	// 1. Identify all potential Cargo workspaces/projects in the Nx graph
+	const cargoConfigPaths = Object.values(ctx.projects)
+		.map(p => path.join(ctx.workspaceRoot, p.root, "Cargo.toml"))
+		.filter(p => fs.existsSync(p));
+
+	for (const configPath of cargoConfigPaths) {
+		const configDir = path.dirname(configPath);
+
+		// 2. Get metadata for this specific workspace
+		const metadata = getCargoMetadata(configDir);
+
+		// 3. Skip if we've already processed this workspace (via another member)
+		if (processedWorkspaceRoots.has(metadata.workspace_root)) {
+			continue;
+		}
+		processedWorkspaceRoots.add(metadata.workspace_root);
+
+		// 4. Process this workspace's internal dependencies
+		const workspaceDeps = processWorkspaceMetadata(ctx, metadata);
+		allDependencies.push(...workspaceDeps);
+	}
+
+	return allDependencies;
+}
+
+function processWorkspaceMetadata(
+	ctx: Context,
+	metadata: CargoMetadata
+): GraphDependency[] {
+	const {
 		packages,
 		workspace_members: cargoWsMembers,
 		resolve: cargoResolve,
-	} = getCargoMetadata();
+	} = metadata;
 
-	let workspacePackages = new Map<CargoId, CargoPackage>();
-	for (let id of cargoWsMembers) {
-		let pkg = packages.find(p => p.id === id);
-		if (pkg) {
-			workspacePackages.set(id, pkg);
-		}
+	const workspacePackages = new Map<CargoId, CargoPackage>();
+	for (const id of cargoWsMembers) {
+		const pkg = packages.find(p => p.id === id);
+		if (pkg) workspacePackages.set(id, pkg);
 	}
 
-	let nxData = mapCargoProjects(ctx, workspacePackages);
+	const nxData = mapCargoProjects(ctx, workspacePackages);
 
-	return cargoResolve
-		.nodes
+	return cargoResolve.nodes
 		.filter(({ id }) => nxData.has(id))
-		.flatMap<GraphDependency>(({ id: sourceId, dependencies }) => {
-			let sourceProject = nxData.get(sourceId)!;
-			let cargoPackage = workspacePackages.get(sourceId)!;
-			let sourceManifest = path
+		.flatMap(({ id: sourceId, dependencies }) => {
+			const sourceProject = nxData.get(sourceId)!;
+			const cargoPackage = workspacePackages.get(sourceId)!;
+			const sourceManifest = path
 				.relative(ctx.workspaceRoot, cargoPackage.manifest_path)
 				.replace(/\\/g, "/");
 
 			return dependencies
 				.filter(depId => nxData.has(depId))
-				.map(depId => {
-					let targetProject = nxData.get(depId)!;
-
-					return {
-						source: sourceProject.name,
-						target: targetProject.name,
-						type: DependencyType.static,
-						sourceFile: sourceManifest,
-					}
-				})
+				.map(depId => ({
+					source: sourceProject.name,
+					target: nxData.get(depId)!.name,
+					type: DependencyType.static,
+					sourceFile: sourceManifest,
+				}));
 		});
 }
 
-function getCargoMetadata(): CargoMetadata {
-	let availableMemory = os.freemem();
-	let metadata = cp.execSync("cargo metadata --format-version=1", {
+function getCargoMetadata(cwd: string): CargoMetadata {
+	const availableMemory = os.freemem();
+	// Run cargo metadata from the specific directory of the Cargo.toml
+	const metadata = cp.execSync("cargo metadata --format-version=1", {
 		encoding: "utf8",
 		maxBuffer: availableMemory,
+		cwd: cwd, // Crucial: run in the workspace directory
 	});
 
 	return JSON.parse(metadata);
 }
 
-type WithReq<T, K extends keyof T>
-	= Omit<T, K>
-	& { [Key in K]-?: Exclude<T[Key], null|undefined> }
+type WithReq<T, K extends keyof T> = Omit<T, K> & {
+	[Key in K]-?: Exclude<T[Key], null | undefined>;
+};
 
 function mapCargoProjects(ctx: Context, packages: Map<CargoId, CargoPackage>) {
 	let result = new Map<CargoId, WithReq<ProjectConfiguration, "name">>();
@@ -141,9 +171,9 @@ function mapCargoProjects(ctx: Context, packages: Map<CargoId, CargoPackage>) {
 			.relative(ctx.workspaceRoot, manifestDir)
 			.replace(/\\/g, "/");
 
-		let found = Object
-			.entries(ctx.projects)
-			.find(([, config]) => config.root === projectDir);
+		let found = Object.entries(ctx.projects).find(
+			([, config]) => config.root === projectDir
+		);
 
 		if (found) {
 			let [projectName, projectConfig] = found;
