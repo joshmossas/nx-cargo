@@ -1,7 +1,7 @@
 {
 	"name": "@joshmossas/nx-cargo",
 	"private": false,
-	"version": "0.6.2",
+	"version": "0.6.3",
 	"license": "MIT",
 	"main": "dist/index.mjs",
 	"repository": {
@@ -24,7 +24,7 @@
 	"devDependencies": {
 		"unbuild": "^3.6.1"
 	},
-  "scripts": {
-    "build": "unbuild"
-  }
+	"scripts": {
+		"build": "unbuild"
+	}
 }

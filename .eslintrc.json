@@ -31,7 +31,6 @@
 			"extends": ["plugin:@nx/typescript"],
 			"rules": {
 				"prefer-const": "off",
-				"prefer-let/prefer-let": "warn",
 				"@typescript-eslint/no-non-null-assertion": "off",
 				"@typescript-eslint/no-unused-vars": [
 					"warn",
