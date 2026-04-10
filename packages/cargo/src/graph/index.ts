@@ -160,10 +160,14 @@ function mapCargoProjects(ctx: Context, packages: Map<CargoId, CargoPackage>) {
  */
 function getCargoMetadata(cwd: string): CargoMetadata {
 	const availableMemory = os.freemem();
+	const cmd = "cargo metadata --format-version=1 --no-deps";
+	console.info(`Executing: "${cmd}"`);
 	const metadata = cp.execSync("cargo metadata --format-version=1 --no-deps", {
 		encoding: "utf8",
 		maxBuffer: availableMemory,
 		cwd: cwd,
+		env: { ...process.env },
+		stdio: ["ignore", "pipe", "pipe"],
 	});
 
 	return JSON.parse(metadata);
