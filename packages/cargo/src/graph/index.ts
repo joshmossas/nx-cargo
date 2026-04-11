@@ -1,5 +1,4 @@
 import {
-	ProjectConfiguration,
 	CreateDependenciesContext as Context,
 	RawProjectGraphDependency as GraphDependency,
 	DependencyType,
@@ -7,167 +6,230 @@ import {
 import * as cp from "child_process";
 import * as os from "os";
 import * as path from "path";
-import * as fs from "fs";
+import { globby } from "globby";
 
-/** * Type Definitions for Cargo Metadata
+//// "cargo metadata stuff" ////
+
+/**
+ * looks something like this "path+file://path/to/project#0.1.1"
+ * see https://doc.rust-lang.org/cargo/commands/cargo-metadata.html#json-format
+ * and https://doc.rust-lang.org/cargo/reference/pkgid-spec.html
  */
-type VersionNumber = `${number}.${number}.${number}`;
-type PackageVersion = `${string}@${VersionNumber}` | VersionNumber;
-type CargoId = `${"registry" | "path"}+${
-	| "http"
-	| "https"
-	| "file"}://${string}#${PackageVersion}`;
-
-interface CargoPackage {
+export type CargoPkgId = string;
+export interface CargoPackage {
 	name: string;
 	version: string;
-	id: CargoId;
-	dependencies: unknown[];
+	id: CargoPkgId;
+	license: string;
+	license_file: string | null;
+	description: string;
+	source: string | null;
+	dependencies: CargoDependency[];
+	targets: unknown; // TODO
+	features: Record<string, string[]>;
 	manifest_path: string;
+	metadata: unknown | null; // TODO
+	publish: unknown | null; // TODO
+	authors: string[];
+	categories: string[];
+	keywords: string[];
+	readme: string | null;
+	repository: string | null;
+	homepage: string | null;
+	documentation: string | null;
+	edition: string;
+	links: unknown | null; // TODO
+	default_run: unknown | null; // TODO
+	rust_version: string;
 }
 
-interface CargoMetadata {
+export interface CargoDependency {
+	name: string;
+	source: string | null;
+	req: string;
+	kind: "build" | "dev" | null;
+	rename: string | null;
+	optional: boolean;
+	uses_default_features: boolean;
+	features: string[];
+	target: string | null;
+	registry: string | null;
+	path?: string;
+}
+
+export interface CargoMetadata {
 	packages: CargoPackage[];
-	workspace_members: CargoId[];
+	workspace_members: CargoPkgId[];
+	workspace_default_members: CargoPkgId[];
 	resolve: {
 		nodes: ResolveNode[];
+		root: unknown;
 	};
+	target_directory: string;
+	version: number;
 	workspace_root: string;
+	metadata: unknown | null;
 }
 
-interface ResolveNode {
-	id: CargoId;
-	dependencies: CargoId[];
+export interface ResolveNode {
+	id: CargoPkgId;
+	dependencies: CargoPkgId[];
 }
 
-type WithReq<T, K extends keyof T> = Omit<T, K> & {
-	[Key in K]-?: Exclude<T[Key], null | undefined>;
-};
+export interface CargoProject {
+	/**
+	 * Path to the project directory
+	 */
+	projectDir: string;
+	/**
+	 * Path to the Cargo.toml file
+	 */
+	manifestPath: string;
+	/**
+	 * List of project directories that this project depends on
+	 */
+	dependencyProjectDirs: string[];
+}
 
-/**
- * Main Nx Dependency Creator
- */
-export function createDependencies(_: unknown, ctx: Context): GraphDependency[] {
-	const allDependencies: GraphDependency[] = [];
-	const seenManifestPaths = new Set<string>();
-
-	// 1. Identify and sort manifests by depth (shallowest first)
-	// This ensures we hit workspace roots before hitting their members.
-	const sortedManifests = Object.values(ctx.projects)
-		.map(project => {
-			const filepath = path.resolve(ctx.workspaceRoot, project.root, "Cargo.toml");
-			const depth = filepath.split(path.sep).length;
-			return { filepath, depth };
-		})
-		.filter(manifest => {
-			return fs.existsSync(manifest.filepath);
-		})
-		.sort((a, b) => a.depth - b.depth);
-	fs.writeFileSync("__cargo-manifests.json", JSON.stringify(sortedManifests));
-	for (const { filepath } of sortedManifests) {
-		if (seenManifestPaths.has(filepath)) {
-			continue;
+export async function createDependencies<T = unknown>(
+	_: T,
+	ctx: Context
+): Promise<GraphDependency[]> {
+	// key is the project directory
+	const projectPackages = new Map<string, CargoProject>();
+	const seenDirs = new Set<string>();
+	const cargoTomls = (await globby("**/Cargo.toml", { absolute: true })).sort(
+		(left, right) => {
+			// make it so configs deeper in the file tree are read last since they are more likely to be
+			// part of a workspace meaning we can skip reading them
+			const leftDepth = left.split(path.sep).length;
+			const rightDepth = right.split(path.sep).length;
+			return leftDepth <= rightDepth ? -1 : 1;
 		}
+	);
 
-		try {
-			const metadata = getCargoMetadata(path.dirname(filepath));
+	for (const cargoToml of cargoTomls) {
+		const dirname = path.dirname(cargoToml);
+		if (seenDirs.has(dirname)) continue;
+		const meta = getCargoMetadata(dirname);
+		seenDirs.add(dirname);
+		if (isWorkspaceMetadata(meta)) {
+			// create a "project" just in case the workspace itself is a project
+			const workspaceProject: CargoProject = {
+				projectDir: dirname,
+				manifestPath: path.resolve(dirname, "Cargo.toml"),
+				dependencyProjectDirs: [],
+			};
+			// for workspaces "packages" includes all the workspace members
+			for (const pkg of meta.packages) {
+				const [projectDir, manifestPath] = dirsFromCargoPkgId(pkg.id);
+				if (!projectDir) continue;
+				seenDirs.add(projectDir);
+				// workspaces depend on all of their members
+				workspaceProject.dependencyProjectDirs.push(projectDir);
 
-			if (metadata.packages) {
-				for (const pkg of metadata.packages) {
-					seenManifestPaths.add(path.resolve(pkg.manifest_path));
+				// collect the dependencies of the member
+				const dependencyDirs: string[] = [];
+				for (const dep of pkg.dependencies) {
+					if (typeof dep.path !== "string") continue;
+					dependencyDirs.push(path.resolve(dep.path));
 				}
+
+				// add the workspace member to the project map
+				projectPackages.set(projectDir, {
+					projectDir: projectDir,
+					manifestPath: manifestPath,
+					dependencyProjectDirs: dependencyDirs,
+				});
 			}
 
-			const workspaceDeps = processWorkspaceMetadata(ctx, metadata);
-			allDependencies.push(...workspaceDeps);
-		} catch (e) {
-			// Log to stderr so it shows up in the terminal even if Nx masks the error
-			process.stderr.write(`[nx-rust] Error processing ${filepath}\n`);
+			projectPackages.set(dirname, workspaceProject);
+			continue;
 		}
-	}
-
-	return allDependencies;
-}
-
-/**
- * Orchestrates the mapping between Cargo's internal resolve graph and Nx projects
- */
-function processWorkspaceMetadata(
-	ctx: Context,
-	metadata: CargoMetadata
-): GraphDependency[] {
-	const { packages, resolve } = metadata;
-
-	const workspacePackages = new Map<CargoId, CargoPackage>();
-	for (const pkg of packages) {
-		workspacePackages.set(pkg.id, pkg);
-	}
-
-	const nxData = mapCargoProjects(ctx, workspacePackages);
-
-	return (resolve?.nodes ?? [])
-		.filter(({ id }) => nxData.has(id))
-		.flatMap(({ id: sourceId, dependencies }) => {
-			const sourceProject = nxData.get(sourceId)!;
-			const cargoPackage = workspacePackages.get(sourceId)!;
-			const sourceManifest = path
-				.relative(ctx.workspaceRoot, cargoPackage.manifest_path)
-				.replace(/\\/g, "/");
-
-			return dependencies
-				.filter(depId => nxData.has(depId))
-				.map(depId => ({
-					source: sourceProject.name,
-					target: nxData.get(depId)!.name,
-					type: DependencyType.static,
-					sourceFile: sourceManifest,
-				}));
+		const dependencyDirs: string[] = [];
+		// for non-workspaces "packages" includes all the dependencies of that crate
+		for (const pkg of meta.packages) {
+			const [projectDir, _] = dirsFromCargoPkgId(pkg.id);
+			if (!projectDir) continue;
+			dependencyDirs.push(projectDir);
+		}
+		projectPackages.set(dirname, {
+			projectDir: dirname,
+			manifestPath: path.resolve(dirname, "Cargo.toml"),
+			dependencyProjectDirs: dependencyDirs,
 		});
+	}
+	return translateDependenciesForNx(ctx, projectPackages);
 }
 
-/**
- * Maps Cargo Packages to Nx Project Configurations based on their root directories
- */
-function mapCargoProjects(ctx: Context, packages: Map<CargoId, CargoPackage>) {
-	const result = new Map<CargoId, WithReq<ProjectConfiguration, "name">>();
+export function isWorkspaceMetadata(input: CargoMetadata) {
+	if (input.workspace_members.length > 1) return true;
+	const [projectRoot, _] = dirsFromCargoPkgId(input.workspace_members[0]!);
+	return projectRoot !== input.workspace_root;
+}
 
-	for (const [cargoId, cargoPackage] of packages) {
-		const manifestDir = path.dirname(cargoPackage.manifest_path);
-		const projectDir = path
-			.relative(ctx.workspaceRoot, manifestDir)
-			.replace(/\\/g, "/");
+function getCargoMetadata(cwd: string): CargoMetadata {
+	let availableMemory: number | undefined;
+	try {
+		availableMemory = os.freemem();
+	} catch (err) {}
+	let metadata = cp.execSync("cargo metadata --format-version=1", {
+		encoding: "utf8",
+		maxBuffer: availableMemory,
+		cwd: cwd,
+	});
+	return JSON.parse(metadata);
+}
 
-		const found = Object.entries(ctx.projects).find(
-			([, config]) => config.root === projectDir
-		);
+function getProjectNameByDir(ctx: Context, dir: string): string | undefined {
+	for (const [key, val] of Object.entries(ctx.projects)) {
+		const relativeDir = path.relative(ctx.workspaceRoot, dir);
+		if (val.root === relativeDir) return val.name ?? key;
+	}
+	return undefined;
+}
 
-		if (found) {
-			const [projectName, projectConfig] = found;
-			result.set(cargoId, {
-				...projectConfig,
-				name: projectName,
+export function translateDependenciesForNx(
+	ctx: Context,
+	packages: Map<CargoPkgId, CargoProject>
+): GraphDependency[] {
+	const result: GraphDependency[] = [];
+	for (let [_, cargoProject] of packages) {
+		const projectName = getProjectNameByDir(ctx, cargoProject.projectDir);
+		if (!projectName) continue;
+		for (const dep of cargoProject.dependencyProjectDirs) {
+			const depProjectName = getProjectNameByDir(ctx, dep);
+			if (!depProjectName) continue;
+			result.push({
+				source: projectName,
+				target: depProjectName,
+				type: DependencyType.static,
 			});
 		}
 	}
-
-	fs.writeFileSync("__cargo-projects.json", JSON.stringify(result));
 
 	return result;
 }
 
 /**
- * Executes 'cargo metadata'.
+ * @returns ["{{project-dir}}", "{{manifest-dir}}"] or [undefined, undefined]
  */
-function getCargoMetadata(cwd: string): CargoMetadata {
-	const availableMemory = os.freemem();
-	const cmd = "cargo metadata --format-version=1";
-	const metadata = cp.execSync(cmd, {
-		encoding: "utf8",
-		maxBuffer: availableMemory,
-		cwd: cwd,
-		env: { ...process.env },
-		stdio: ["ignore", "pipe", "pipe"],
-	});
-
-	return JSON.parse(metadata);
+function dirsFromCargoPkgId(
+	input: CargoPkgId
+): [string, string] | [undefined, undefined] {
+	if (!input.startsWith("file://") && !input.startsWith("path+file://")) {
+		return [undefined, undefined];
+	}
+	let [trimmed] = input.split("#");
+	if (typeof trimmed !== "string" || trimmed.length === 0) {
+		return [undefined, undefined];
+	}
+	if (trimmed.startsWith("file://")) {
+		trimmed = trimmed.replace("file://", "");
+	} else if (trimmed.startsWith("path+file://")) {
+		trimmed = trimmed.replace("path+file://", "");
+	}
+	const projectDir = trimmed.split("/").join(path.sep);
+	const manifestPath = path.resolve(trimmed, "Cargo.toml");
+	return [projectDir, manifestPath];
 }

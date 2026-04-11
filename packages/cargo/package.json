@@ -24,6 +24,7 @@
 	},
 	"dependencies": {
 		"chalk": "^4.1.2",
+		"globby": "^16.2.0",
 		"lodash": "^4.17.21",
 		"tslib": "^2.0.0"
 	},
@@ -32,9 +33,11 @@
 	},
 	"devDependencies": {
 		"typescript": "^5.9.3",
-		"unbuild": "^3.6.1"
+		"unbuild": "^3.6.1",
+		"vitest": "^4.1.4"
 	},
 	"scripts": {
-		"build": "unbuild"
+		"build": "unbuild",
+		"test": "vitest run --globals"
 	}
 }
