@@ -197,12 +197,22 @@ function getCargoMetadata(cwd: string): CargoMetadata {
 	return JSON.parse(metadata);
 }
 
-function getProjectNameByDir(ctx: Context, dir: string): string | undefined {
+function getProjectNameAndSourceFileByDir(
+	ctx: Context,
+	dir: string
+): [string, string] | [undefined, undefined] {
 	for (const [key, val] of Object.entries(ctx.projects)) {
 		const relativeDir = path.relative(ctx.workspaceRoot, dir);
-		if (val.root === relativeDir) return val.name ?? key;
+		if (val.root === relativeDir) {
+			const name = val.name ?? key;
+			const sourceFile = path.relative(
+				ctx.workspaceRoot,
+				path.resolve(dir, "Cargo.toml")
+			);
+			return [name, sourceFile];
+		}
 	}
-	return undefined;
+	return [undefined, undefined];
 }
 
 export function translateDependenciesForNx(
@@ -211,13 +221,17 @@ export function translateDependenciesForNx(
 ): GraphDependency[] {
 	const result: GraphDependency[] = [];
 	for (let [_, cargoProject] of packages) {
-		const projectName = getProjectNameByDir(ctx, cargoProject.projectDir);
+		const [projectName, sourceFile] = getProjectNameAndSourceFileByDir(
+			ctx,
+			cargoProject.projectDir
+		);
 		if (!projectName) continue;
 		for (const dep of cargoProject.dependencyProjectDirs) {
-			const depProjectName = getProjectNameByDir(ctx, dep);
+			const [depProjectName, _] = getProjectNameAndSourceFileByDir(ctx, dep);
 			if (!depProjectName) continue;
 			result.push({
 				source: projectName,
+				sourceFile: sourceFile,
 				target: depProjectName,
 				type: DependencyType.static,
 			});

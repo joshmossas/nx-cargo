@@ -164,16 +164,19 @@ test("translateDependenciesForNx", () => {
 	const expectedResult: RawProjectGraphDependency[] = [
 		{
 			source: "foo",
+			sourceFile: "libs/foo/Cargo.toml",
 			target: "bar",
 			type: DependencyType.static,
 		},
 		{
 			source: "foo",
+			sourceFile: "libs/foo/Cargo.toml",
 			target: "randomName",
 			type: DependencyType.static,
 		},
 		{
 			source: "bar",
+			sourceFile: "libs/bar/Cargo.toml",
 			target: "randomName",
 			type: DependencyType.static,
 		},
