@@ -99,7 +99,7 @@ export interface NxCargoOptions {
 }
 
 export async function createDependencies(
-	options: NxCargoOptions,
+	options: NxCargoOptions | undefined,
 	ctx: Context
 ): Promise<GraphDependency[]> {
 	// key is the project directory
@@ -122,7 +122,7 @@ export async function createDependencies(
 		try {
 			meta = getCargoMetadata(dirname);
 		} catch (err) {
-			if (options.ignoreCargoErrors) {
+			if (options?.ignoreCargoErrors) {
 				console.warn(`[nx-cargo] Error reading cargo toml. ${err}`);
 				continue;
 			}
