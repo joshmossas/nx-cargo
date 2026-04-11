@@ -91,8 +91,15 @@ export interface CargoProject {
 	dependencyProjectDirs: string[];
 }
 
-export async function createDependencies<T = unknown>(
-	_: T,
+export interface NxCargoOptions {
+	/**
+	 * Will skip cargo errors
+	 */
+	ignoreCargoErrors?: boolean;
+}
+
+export async function createDependencies(
+	options: NxCargoOptions,
 	ctx: Context
 ): Promise<GraphDependency[]> {
 	// key is the project directory
@@ -111,7 +118,16 @@ export async function createDependencies<T = unknown>(
 	for (const cargoToml of cargoTomls) {
 		const dirname = path.dirname(cargoToml);
 		if (seenDirs.has(dirname)) continue;
-		const meta = getCargoMetadata(dirname);
+		let meta: CargoMetadata;
+		try {
+			meta = getCargoMetadata(dirname);
+		} catch (err) {
+			if (options.ignoreCargoErrors) {
+				console.warn(`[nx-cargo] Error reading cargo toml. ${err}`);
+				continue;
+			}
+			throw err;
+		}
 		seenDirs.add(dirname);
 		if (isWorkspaceMetadata(meta)) {
 			// create a "project" just in case the workspace itself is a project
