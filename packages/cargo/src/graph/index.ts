@@ -100,20 +100,36 @@ export interface NxCargoOptions {
 
 export async function createDependencies(
 	options: NxCargoOptions | undefined,
-	ctx: Context
+	ctx: Context,
 ): Promise<GraphDependency[]> {
 	// key is the project directory
 	const projectPackages = new Map<string, CargoProject>();
 	const seenDirs = new Set<string>();
-	const cargoTomls = (await globby("**/Cargo.toml", { absolute: true })).sort(
-		(left, right) => {
-			// make it so configs deeper in the file tree are read last since they are more likely to be
-			// part of a workspace meaning we can skip reading them
-			const leftDepth = left.split(path.sep).length;
-			const rightDepth = right.split(path.sep).length;
-			return leftDepth <= rightDepth ? -1 : 1;
-		}
-	);
+	const cargoTomls = (
+		await globby("**/Cargo.toml", {
+			absolute: true,
+			ignore: [
+				"node_modules",
+				"**/node_modules",
+				".vscode",
+				"target",
+				"**/target",
+				".dart_tool",
+				"**/.dart_tool",
+				".gradle",
+				"**/.gradle",
+				"**/.*/**",
+				"**/build",
+				"**/dist",
+			],
+		})
+	).sort((left, right) => {
+		// make it so configs deeper in the file tree are read last since they are more likely to be
+		// part of a workspace meaning we can skip reading them
+		const leftDepth = left.split(path.sep).length;
+		const rightDepth = right.split(path.sep).length;
+		return leftDepth <= rightDepth ? -1 : 1;
+	});
 
 	for (const cargoToml of cargoTomls) {
 		const dirname = path.dirname(cargoToml);
@@ -210,7 +226,7 @@ function getCargoMetadata(cwd: string): CargoMetadata {
 
 function getProjectNameAndSourceFileByDir(
 	ctx: Context,
-	dir: string
+	dir: string,
 ): [string, string] | [undefined, undefined] {
 	for (const [key, val] of Object.entries(ctx.projects)) {
 		const relativeDir = path.relative(ctx.workspaceRoot, dir);
@@ -218,7 +234,7 @@ function getProjectNameAndSourceFileByDir(
 			const name = val.name ?? key;
 			const sourceFile = path.relative(
 				ctx.workspaceRoot,
-				path.resolve(dir, "Cargo.toml")
+				path.resolve(dir, "Cargo.toml"),
 			);
 			return [name, sourceFile];
 		}
@@ -228,13 +244,13 @@ function getProjectNameAndSourceFileByDir(
 
 export function translateDependenciesForNx(
 	ctx: Context,
-	packages: Map<CargoPkgId, CargoProject>
+	packages: Map<CargoPkgId, CargoProject>,
 ): GraphDependency[] {
 	const result: GraphDependency[] = [];
 	for (let [_, cargoProject] of packages) {
 		const [projectName, sourceFile] = getProjectNameAndSourceFileByDir(
 			ctx,
-			cargoProject.projectDir
+			cargoProject.projectDir,
 		);
 		if (!projectName) continue;
 		for (const dep of cargoProject.dependencyProjectDirs) {
@@ -256,7 +272,7 @@ export function translateDependenciesForNx(
  * @returns ["{{project-dir}}", "{{manifest-dir}}"] or [undefined, undefined]
  */
 function dirsFromCargoPkgId(
-	input: CargoPkgId
+	input: CargoPkgId,
 ): [string, string] | [undefined, undefined] {
 	if (!input.startsWith("file://") && !input.startsWith("path+file://")) {
 		return [undefined, undefined];
