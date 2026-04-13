@@ -40,9 +40,7 @@ describe("common utils", () => {
 			expect(args.join(" ")).toEqual("cargo run -p foo");
 
 			args = ["cargo", ...parseCargoArgs(Target.Clippy, opts, ctx)[0]];
-			expect(args.join(" ")).toEqual(
-				"cargo clippy -p foo -- -D warnings --no-deps"
-			);
+			expect(args.join(" ")).toEqual("cargo clippy -p foo -- -D warnings --no-deps");
 		});
 
 		it("should ignore the Nx-config-specified target name", () => {
@@ -56,7 +54,10 @@ describe("common utils", () => {
 		it("should correctly handle `release` option", () => {
 			let ctx = mockExecutorContext("test-app:build");
 
-			let args = ["cargo", ...parseCargoArgs(Target.Build, { release: false }, ctx)[0]];
+			let args = [
+				"cargo",
+				...parseCargoArgs(Target.Build, { release: false }, ctx)[0],
+			];
 			expect(args.join(" ")).toEqual("cargo build --bin test-app");
 
 			args = ["cargo", ...parseCargoArgs(Target.Build, { release: true }, ctx)[0]];
@@ -72,14 +73,14 @@ describe("common utils", () => {
 			let args = ["cargo", ...parseCargoArgs(Target.Build, opts, ctx)[0]];
 
 			expect(args.join(" ")).toEqual(
-				"cargo build --bin test-app --profile dev-custom",
+				"cargo build --bin test-app --profile dev-custom"
 			);
 
 			opts = { unknownArg: "lorem-ipsum" };
 			args = ["cargo", ...parseCargoArgs(Target.Build, opts, ctx)[0]];
 
 			expect(args.join(" ")).toEqual(
-				"cargo build --bin test-app --unknown-arg lorem-ipsum",
+				"cargo build --bin test-app --unknown-arg lorem-ipsum"
 			);
 		});
 
@@ -92,7 +93,7 @@ describe("common utils", () => {
 			let args = ["cargo", ...parseCargoArgs(Target.Build, opts, ctx)[0]];
 
 			expect(args.join(" ")).toEqual(
-				"cargo build -p test-app --bin custom-bin-name",
+				"cargo build -p test-app --bin custom-bin-name"
 			);
 		});
 
@@ -108,8 +109,8 @@ describe("common utils", () => {
 			let args = ["cargo", ...parseCargoArgs(Target.Clippy, opts, ctx)[0]];
 
 			expect(args.join(" ")).toEqual(
-				"cargo clippy -p test-app-pkg --target wasm32-unknown-unknown "
-					+ "-- -D warnings --no-deps",
+				"cargo clippy -p test-app-pkg --target wasm32-unknown-unknown " +
+					"-- -D warnings --no-deps"
 			);
 		});
 
@@ -136,22 +137,30 @@ describe("common utils", () => {
 		});
 
 		it("should respect kebab-case project names", () => {
-			let opts = normalizeGeneratorOptions("application", appTree, { name: "my-app" });
+			let opts = normalizeGeneratorOptions("application", appTree, {
+				name: "my-app",
+			});
 			expect(opts.projectName).toBe("my-app");
 		});
 
 		it("should respect snake_case project names", () => {
-			let opts = normalizeGeneratorOptions("application", appTree, { name: "my_app" });
+			let opts = normalizeGeneratorOptions("application", appTree, {
+				name: "my_app",
+			});
 			expect(opts.projectName).toBe("my_app");
 		});
 
 		it("should respect PascalCase project names", () => {
-			let opts = normalizeGeneratorOptions("application", appTree, { name: "MyApp" });
+			let opts = normalizeGeneratorOptions("application", appTree, {
+				name: "MyApp",
+			});
 			expect(opts.projectName).toBe("MyApp");
 		});
 
 		it("should respect camelCase project names (you monster)", () => {
-			let opts = normalizeGeneratorOptions("application", appTree, { name: "myApp" });
+			let opts = normalizeGeneratorOptions("application", appTree, {
+				name: "myApp",
+			});
 			expect(opts.projectName).toBe("myApp");
 		});
 	});
@@ -179,5 +188,5 @@ function mockExecutorContext(command: string): ExecutorContext {
 		},
 		projectName,
 		targetName,
-	};
+	} as any;
 }

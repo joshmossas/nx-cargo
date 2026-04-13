@@ -15,7 +15,7 @@ export default async function (opts: CLIOptions, ctx: ExecutorContext) {
 	} catch (err) {
 		return {
 			success: false,
-			reason: err?.message,
+			reason: err instanceof Error ? err.message : `${err}`,
 		};
 	}
 }

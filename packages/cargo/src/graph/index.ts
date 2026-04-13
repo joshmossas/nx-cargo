@@ -136,21 +136,31 @@ export async function createDependencies(
 				manifestPath: path.resolve(dirname, "Cargo.toml"),
 				dependencyProjectDirs: [],
 			};
+			// workspace projects depend on all their members
+			// I've chosen NOT to make "workspace" projects dependent on the actual local packages listed in
+			// dependencies in the Cargo.toml. Instead they will only be dependent on their members.
+			//
+			// This is because the individual members will already be depending on those dependencies if imported
+			// So adding those to the workspace dependency array would be redundant and it muddies up the dependency graph
+			for (const member of meta.workspace_members) {
+				const [projectDir, _] = dirsFromCargoPkgId(member);
+				if (!projectDir) continue;
+				if (workspaceProject.dependencyProjectDirs.includes(projectDir)) {
+					continue;
+				}
+				workspaceProject.dependencyProjectDirs.push(projectDir);
+			}
 			// for workspaces "packages" includes all the workspace members
 			for (const pkg of meta.packages) {
 				const [projectDir, manifestPath] = dirsFromCargoPkgId(pkg.id);
 				if (!projectDir) continue;
 				seenDirs.add(projectDir);
-				// workspaces depend on all of their members
-				workspaceProject.dependencyProjectDirs.push(projectDir);
-
 				// collect the dependencies of the member
 				const dependencyDirs: string[] = [];
 				for (const dep of pkg.dependencies) {
 					if (typeof dep.path !== "string") continue;
 					dependencyDirs.push(path.resolve(dep.path));
 				}
-
 				// add the workspace member to the project map
 				projectPackages.set(projectDir, {
 					projectDir: projectDir,
@@ -158,7 +168,6 @@ export async function createDependencies(
 					dependencyProjectDirs: dependencyDirs,
 				});
 			}
-
 			projectPackages.set(dirname, workspaceProject);
 			continue;
 		}
@@ -188,7 +197,9 @@ function getCargoMetadata(cwd: string): CargoMetadata {
 	let availableMemory: number | undefined;
 	try {
 		availableMemory = os.freemem();
-	} catch (err) {}
+	} catch (err) {
+		// do nothing
+	}
 	let metadata = cp.execSync("cargo metadata --format-version=1", {
 		encoding: "utf8",
 		maxBuffer: availableMemory,
