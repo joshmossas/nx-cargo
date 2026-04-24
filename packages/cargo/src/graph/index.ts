@@ -6,6 +6,7 @@ import {
 import * as cp from "child_process";
 import * as os from "os";
 import * as path from "path";
+import * as fs from "fs";
 import { globby } from "globby";
 
 //// "cargo metadata stuff" ////
@@ -100,7 +101,7 @@ export interface NxCargoOptions {
 
 export async function createDependencies(
 	options: NxCargoOptions | undefined,
-	ctx: Context,
+	ctx: Context
 ): Promise<GraphDependency[]> {
 	// key is the project directory
 	const projectPackages = new Map<string, CargoProject>();
@@ -133,6 +134,13 @@ export async function createDependencies(
 
 	for (const cargoToml of cargoTomls) {
 		const dirname = path.dirname(cargoToml);
+		let isProjectDir: boolean;
+		try {
+			isProjectDir = fs.existsSync(path.resolve(dirname, "project.json"));
+		} catch (_) {
+			isProjectDir = false;
+		}
+		if (!isProjectDir) continue;
 		if (seenDirs.has(dirname)) continue;
 		let meta: CargoMetadata;
 		try {
@@ -226,7 +234,7 @@ function getCargoMetadata(cwd: string): CargoMetadata {
 
 function getProjectNameAndSourceFileByDir(
 	ctx: Context,
-	dir: string,
+	dir: string
 ): [string, string] | [undefined, undefined] {
 	for (const [key, val] of Object.entries(ctx.projects)) {
 		const relativeDir = path.relative(ctx.workspaceRoot, dir);
@@ -234,7 +242,7 @@ function getProjectNameAndSourceFileByDir(
 			const name = val.name ?? key;
 			const sourceFile = path.relative(
 				ctx.workspaceRoot,
-				path.resolve(dir, "Cargo.toml"),
+				path.resolve(dir, "Cargo.toml")
 			);
 			return [name, sourceFile];
 		}
@@ -244,13 +252,13 @@ function getProjectNameAndSourceFileByDir(
 
 export function translateDependenciesForNx(
 	ctx: Context,
-	packages: Map<CargoPkgId, CargoProject>,
+	packages: Map<CargoPkgId, CargoProject>
 ): GraphDependency[] {
 	const result: GraphDependency[] = [];
 	for (let [_, cargoProject] of packages) {
 		const [projectName, sourceFile] = getProjectNameAndSourceFileByDir(
 			ctx,
-			cargoProject.projectDir,
+			cargoProject.projectDir
 		);
 		if (!projectName) continue;
 		for (const dep of cargoProject.dependencyProjectDirs) {
@@ -272,7 +280,7 @@ export function translateDependenciesForNx(
  * @returns ["{{project-dir}}", "{{manifest-dir}}"] or [undefined, undefined]
  */
 function dirsFromCargoPkgId(
-	input: CargoPkgId,
+	input: CargoPkgId
 ): [string, string] | [undefined, undefined] {
 	if (!input.startsWith("file://") && !input.startsWith("path+file://")) {
 		return [undefined, undefined];
