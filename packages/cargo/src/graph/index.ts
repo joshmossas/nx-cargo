@@ -103,6 +103,11 @@ export async function createDependencies(
 	options: NxCargoOptions | undefined,
 	ctx: Context
 ): Promise<GraphDependency[]> {
+	const skipRustGraph =
+		process.env["NX_SKIP_GRAPH"] ?? process.env["NX_SKIP_RUST_GRAPH"] ?? "false";
+	if (["true", "TRUE", "1", true].includes(skipRustGraph)) {
+		return [];
+	}
 	// key is the project directory
 	const projectPackages = new Map<string, CargoProject>();
 	const seenDirs = new Set<string>();
